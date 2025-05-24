@@ -33,18 +33,70 @@ from ii_agent.llm.base import (
 
 
 class OpenAIDirectClient(LLMClient):
-    """Use OpenAI models via first party API."""
+    """
+    LLM Client for OpenAI models, supporting both direct API access and Azure OpenAI services.
+    """
 
-    def __init__(self, model_name: str, max_retries=2, cot_model: bool = True):
-        """Initialize the OpenAI first party client."""
-        api_key = os.getenv("OPENAI_API_KEY", "EMPTY")
-        base_url = os.getenv("OPENAI_BASE_URL", "http://0.0.0.0:2323")
-        self.client = openai.OpenAI(
-            api_key=api_key,
-            base_url=base_url,
-            max_retries=1,
-        )
-        self.model_name = model_name
+    def __init__(
+        self,
+        model_name: str,
+        max_retries=2,
+        cot_model: bool = True,
+        azure_endpoint: str | None = None,
+        azure_deployment: str | None = None,
+        api_version: str | None = None,
+    ):
+        """
+        Initialize the OpenAI client.
+
+        Can be configured to use either the direct OpenAI API or an Azure OpenAI endpoint.
+
+        Args:
+            model_name: For direct OpenAI, this is the model name (e.g., "gpt-4-turbo").
+                        For Azure, this parameter is effectively ignored and `azure_deployment` is used as the model identifier.
+            max_retries: Maximum number of retries for API calls.
+            cot_model: Whether this model is a Chain-of-Thought style model.
+            azure_endpoint: Optional. The Azure OpenAI endpoint URL.
+                            If provided, the client is configured for Azure OpenAI.
+                            Example: "https://<your-resource-name>.openai.azure.com/"
+            azure_deployment: Optional. The Azure OpenAI deployment ID (the name of your deployed model).
+                              Required if `azure_endpoint` is provided. This is used as the
+                              effective model name for calls to Azure OpenAI.
+            api_version: Optional. The Azure OpenAI API version. Required if `azure_endpoint` is provided.
+                         Example: "2023-12-01-preview".
+
+        Raises:
+            ValueError: If `azure_endpoint` is provided but `azure_deployment` or `api_version` is missing,
+                        or if the necessary API key (AZURE_OPENAI_API_KEY or OPENAI_API_KEY for Azure) is not found.
+        """
+        if azure_endpoint:
+            if not azure_deployment or not api_version:
+                raise ValueError(
+                    "If azure_endpoint is provided, azure_deployment and api_version must also be provided."
+                )
+            api_key = os.getenv("AZURE_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError(
+                    "For Azure OpenAI, either the AZURE_OPENAI_API_KEY or OPENAI_API_KEY environment variable must be set."
+                )
+            self.client = openai.AzureOpenAI(
+                azure_endpoint=azure_endpoint,
+                azure_deployment=azure_deployment,
+                api_version=api_version,
+                api_key=api_key,
+                max_retries=1,
+            )
+            self.model_name = azure_deployment
+        else:
+            api_key = os.getenv("OPENAI_API_KEY", "EMPTY")
+            base_url = os.getenv("OPENAI_BASE_URL", "http://0.0.0.0:2323")
+            self.client = openai.OpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=1,
+            )
+            self.model_name = model_name
+
         self.max_retries = max_retries
         self.cot_model = cot_model
 
