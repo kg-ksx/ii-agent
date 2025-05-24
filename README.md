@@ -28,65 +28,27 @@ II Agent is built around providing an agentic interface to Anthropic Claude mode
 - A WebSocket server that powers a modern React-based frontend
 - Integration with Google Cloud's Vertex AI for API access to Anthropic models
 
+For detailed information about the backend architecture, components, project structure, and advanced usage, please see our [Core Backend Documentation](README_CORE.md).
+
 ## Core Capabilities
 
-II-Agent is a versatile open-source assistant built to elevate your productivity across domains:
+II-Agent is a versatile open-source assistant capable of enhancing productivity across various domains including:
+- Research & Fact-Checking
+- Content Generation
+- Data Analysis & Visualization
+- Software Development
+- Workflow Automation
+- Problem Solving
 
-| Domain | What II‑Agent Can Do |
-|--------|----------------------|
-| Research & Fact‑Checking | Multistep web search, source triangulation, structured note‑taking, rapid summarization |
-| Content Generation | Blog & article drafts, lesson plans, creative prose, technical manuals, Website creations |
-| Data Analysis & Visualization | Cleaning, statistics, trend detection, charting, and automated report generation |
-| Software Development | Code synthesis, refactoring, debugging, test‑writing, and step‑by‑step tutorials across multiple languages |
-| Workflow Automation | Script generation, browser automation, file management, process optimization |
-| Problem Solving | Decomposition, alternative‑path exploration, stepwise guidance, troubleshooting |
+For a detailed breakdown of capabilities and how the backend supports them, please refer to the [Core Backend Documentation](README_CORE.md#core-capabilities).
 
 ## Methods
 
-The II-Agent system represents a sophisticated approach to building versatile AI agents. Our methodology centers on:
-
-1. **Core Agent Architecture and LLM Interaction**
-   - System prompting with dynamically tailored context
-   - Comprehensive interaction history management
-   - Intelligent context management to handle token limitations
-   - Systematic LLM invocation and capability selection
-   - Iterative refinement through execution cycles
-
-2. **Planning and Reflection**
-   - Structured reasoning for complex problem-solving
-   - Problem decomposition and sequential thinking
-   - Transparent decision-making process
-   - Hypothesis formation and testing
-
-3. **Execution Capabilities**
-   - File system operations with intelligent code editing
-   - Command line execution in a secure environment
-   - Advanced web interaction and browser automation
-   - Task finalization and reporting
-   - Specialized capabilities for various modalities (Experimental) (PDF, audio, image, video, slides)
-   - Deep research integration
-
-4. **Context Management**
-   - Token usage estimation and optimization
-   - Strategic truncation for lengthy interactions
-   - File-based archival for large outputs
-
-5. **Real-time Communication**
-   - WebSocket-based interface for interactive use
-   - Isolated agent instances per client
-   - Streaming operational events for responsive UX
+Our methodology focuses on a robust Core Agent Architecture, LLM Interaction, structured Planning and Reflection, comprehensive Execution Capabilities, intelligent Context Management, and Real-time Communication. This approach enables II-Agent to handle complex, multi-step tasks effectively. For a deeper dive into our methods, see the [Core Backend Documentation](README_CORE.md#methods).
 
 ## GAIA Benchmark Evaluation
 
-II-Agent has been evaluated on the GAIA benchmark, which assesses LLM-based agents operating within realistic scenarios across multiple dimensions including multimodal processing, tool utilization, and web searching.
-
-We identified several issues with the GAIA benchmark during our evaluation:
-
-- **Annotation Errors**: Several incorrect annotations in the dataset (e.g., misinterpreting date ranges, calculation errors)
-- **Outdated Information**: Some questions reference websites or content no longer accessible
-- **Language Ambiguity**: Unclear phrasing leading to different interpretations of questions
-
-Despite these challenges, II-Agent demonstrated strong performance on the benchmark, particularly in areas requiring complex reasoning, tool use, and multi-step planning.
+II-Agent has demonstrated strong performance on the GAIA benchmark, excelling in tasks requiring complex reasoning, tool use, and multi-step planning. More details on our evaluation and findings can be found in the [Core Backend Documentation](README_CORE.md#gaia-benchmark-evaluation).
 
 ![GAIA Benchmark](assets/gaia.jpg)
 You can view the full traces of some samples here: [GAIA Benchmark Traces](https://ii-agent-gaia.ii.inc/)
@@ -149,58 +111,31 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 ## Usage
 
 ### Command Line Interface
-
-If you want to use anthropic client, set `ANTHROPIC_API_KEY` in `.env` file and run:
+Basic usage:
 ```bash
-python cli.py 
+python cli.py [options]
 ```
-
-If you want to use vertex, set `GOOGLE_APPLICATION_CREDENTIALS` in `.env` file and run:
-```bash
-python cli.py --project-id YOUR_PROJECT_ID --region YOUR_REGION
-```
-
-Options:
-- `--project-id`: Google Cloud project ID
-- `--region`: Google Cloud region (e.g., us-east5)
-- `--workspace`: Path to the workspace directory (default: ./workspace)
-- `--needs-permission`: Require permission before executing commands
-- `--minimize-stdout-logs`: Reduce the amount of logs printed to stdout
+For detailed CLI options and advanced usage, see the [Core Backend Documentation](README_CORE.md#command-line-interface).
 
 ### Web Interface
-
 1. Start the WebSocket server:
+   ```bash
+   python ws_server.py [options]
+   ```
+2. Start the frontend (see `frontend/README.md`).
 
-When using Anthropic client:
-```bash
-export STATIC_FILE_BASE_URL=http://localhost:8000
-python ws_server.py --port 8000
-```
-
-When using Vertex:
-```bash
-export STATIC_FILE_BASE_URL=http://localhost:8000
-python ws_server.py --port 8000 --project-id YOUR_PROJECT_ID --region YOUR_REGION
-```
-
-2. Start the frontend (in a separate terminal):
-
-```bash
-cd frontend
-npm run dev
-```
-
-3. Open your browser to http://localhost:3000
+For detailed server options, see the [Core Backend Documentation](README_CORE.md#web-interface).
+For developers looking to integrate a frontend (especially React) with the WebSocket server, please refer to the [Frontend Integration Guide](INTEGRATION_GUIDE.md).
 
 ## Project Structure
 
-- `cli.py`: Command-line interface
-- `ws_server.py`: WebSocket server for the frontend
-- `src/ii_agent/`: Core agent implementation
-  - `agents/`: Agent implementations
-  - `llm/`: LLM client interfaces
-  - `tools/`: Tool implementations
-  - `utils/`: Utility functions
+The project includes:
+- `cli.py`: Command-line interface.
+- `ws_server.py`: WebSocket server for the frontend.
+- `src/ii_agent/`: Core agent Python implementation.
+- `frontend/`: React-based frontend application.
+
+For a detailed breakdown of the project structure, especially the backend components, please refer to the [Core Backend Documentation](README_CORE.md#project-structure).
 
 ## Conclusion
 
