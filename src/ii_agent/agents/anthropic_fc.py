@@ -50,7 +50,9 @@ try breaking down the task into smaller steps. After call this tool to update or
         max_output_tokens_per_turn: int = 8192,
         max_turns: int = 10,
         websocket: Optional[WebSocket] = None,
-        session_id: Optional[uuid.UUID] = None,
+        session_id: Optional[str] = None, # Changed to str for composite ID
+        user_id: Optional[str] = None, # Added user_id
+        device_id: Optional[str] = None, # Added device_id
     ):
         """Initialize the agent.
 
@@ -64,7 +66,9 @@ try breaking down the task into smaller steps. After call this tool to update or
             max_output_tokens_per_turn: Maximum tokens per turn
             max_turns: Maximum number of turns
             websocket: Optional WebSocket for real-time communication
-            session_id: UUID of the session this agent belongs to
+            session_id: Composite session ID (user_id + device_id)
+            user_id: User ID
+            device_id: Device ID
         """
         super().__init__()
         self.workspace_manager = workspace_manager
@@ -82,7 +86,9 @@ try breaking down the task into smaller steps. After call this tool to update or
         self.interrupted = False
         self.history = MessageHistory()
         self.context_manager = context_manager
-        self.session_id = session_id
+        self.session_id = session_id # This will be the composite ID
+        self.user_id = user_id # Store user_id
+        self.device_id = device_id # Store device_id
 
         # Initialize database manager
         self.db_manager = DatabaseManager()
@@ -96,12 +102,17 @@ try breaking down the task into smaller steps. After call this tool to update or
                 try:
                     message: RealtimeEvent = await self.message_queue.get()
 
-                    # Save all events to database if we have a session
-                    if self.session_id is not None:
-                        self.db_manager.save_event(self.session_id, message)
+                    # Save all events to database if we have a session, user_id, and device_id
+                    if self.session_id and self.user_id and self.device_id:
+                        self.db_manager.save_event(
+                            session_id=self.session_id, # Composite session ID
+                            user_id=self.user_id,
+                            device_id=self.device_id,
+                            event=message
+                        )
                     else:
                         self.logger_for_agent_logs.info(
-                            f"No session ID, skipping event: {message}"
+                            f"Missing session_id, user_id, or device_id, skipping event: {message}"
                         )
 
                     # Only send to websocket if this is not an event from the client and websocket exists

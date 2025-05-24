@@ -31,12 +31,13 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 import anyio
 import base64
+import httpx
 from sqlalchemy import asc, text
 
 from ii_agent.core.event import RealtimeEvent, EventType
-from ii_agent.db.models import Event
+from ii_agent.db.models import Event # This model is likely for SQLAlchemy, might be unused with MongoDB
 from ii_agent.utils.constants import DEFAULT_MODEL, UPLOAD_FOLDER_NAME
-from utils import parse_common_args, create_workspace_manager_for_connection
+from utils import parse_common_args # create_workspace_manager_for_connection will be moved here
 from ii_agent.agents.anthropic_fc import AnthropicFC
 from ii_agent.agents.base import BaseAgent
 from ii_agent.llm.base import LLMClient
@@ -87,15 +88,102 @@ message_processors: Dict[WebSocket, asyncio.Task] = {}
 global_args = None
 
 
+async def fetch_user_id(
+    token: str | None,
+    api_key: str | None,
+    client_key: str | None,
+    device_id: str | None,
+) -> str | None:
+    """Fetches user_id from an external service."""
+    payload = {
+        "token": token,
+        "api_key": api_key,
+        "client_key": client_key,
+        "device_id": device_id,
+    }
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://example.com/fetchuser", json=payload, timeout=10.0
+            )
+        response.raise_for_status()  # Raise an exception for bad status codes
+        response_json = response.json()
+        user_id = response_json.get("user_id")
+        if user_id:
+            logger.info(f"Successfully fetched user_id: {user_id}")
+            return user_id
+        else:
+            logger.error("user_id not found in response")
+            return None
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error occurred: {e.response.status_code} - {e.response.text}")
+        return None
+    except httpx.RequestError as e:
+        logger.error(f"Request error occurred: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"An unexpected error occurred: {e}")
+        return None
+
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
+
+    # Read headers
+    authorization_header = websocket.headers.get("Authorization")
+    api_key_header = websocket.headers.get("X-API-Key")
+    client_key_header = websocket.headers.get("X-Client-Key")
+    device_id_header = websocket.headers.get("X-Device-ID")
+
+    logger.info(f"Authorization Header: {authorization_header}")
+    logger.info(f"X-API-Key Header: {api_key_header}")
+    logger.info(f"X-Client-Key Header: {client_key_header}")
+    logger.info(f"X-Device-ID Header: {device_id_header}")
+
+    # Fetch user_id
+    user_id = await fetch_user_id(
+        token=authorization_header,
+        api_key=api_key_header,
+        client_key=client_key_header,
+        device_id=device_id_header,
+    )
+
+    if user_id is None:
+        await websocket.send_json(
+            RealtimeEvent(
+                type=EventType.ERROR,
+                content={"message": "User authentication failed."},
+            ).model_dump()
+        )
+        await websocket.close()
+        return
+
+    logger.info(f"Successfully authenticated user_id: {user_id}")
+
+    # Determine device_id (already done with device_id_header)
+    # Ensure device_id is present for composite session ID
+    if not device_id_header:
+        logger.error("X-Device-ID header is missing, cannot create composite session ID.")
+        await websocket.send_json(
+            RealtimeEvent(
+                type=EventType.ERROR,
+                content={"message": "X-Device-ID header is required and was not found."},
+            ).model_dump()
+        )
+        await websocket.close()
+        return
+
+    composite_session_id = f"{user_id}_{device_id_header}"
+    logger.info(f"Using composite session ID: {composite_session_id}")
+    
     active_connections.add(websocket)
 
-    workspace_manager, session_uuid = create_workspace_manager_for_connection(
-        global_args.workspace, global_args.use_container_workspace
+    # workspace_session_uuid is the UUID for the directory name
+    workspace_manager, workspace_session_uuid = create_workspace_manager_for_connection(
+        global_args.workspace, global_args.use_container_workspace # use_container_workspace needs to be from global_args
     )
-    print(f"Workspace manager created: {workspace_manager}")
+    logger.info(f"Workspace manager created: {workspace_manager}, Directory UUID: {workspace_session_uuid}")
 
     try:
         # Initialize LLM client
@@ -131,7 +219,14 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Create a new agent for this connection
                     tool_args = content.get("tool_args", {})
                     agent = create_agent_for_connection(
-                        client, session_uuid, workspace_manager, websocket, tool_args
+                        client=client,
+                        workspace_session_uuid=workspace_session_uuid,
+                        workspace_manager=workspace_manager,
+                        websocket=websocket,
+                        tool_args=tool_args,
+                        user_id=user_id,
+                        device_id=device_id_header, # Pass the determined device_id
+                        composite_session_id=composite_session_id
                     )
                     active_agents[websocket] = agent
 
@@ -354,14 +449,17 @@ def cleanup_connection(websocket: WebSocket):
 
 def create_agent_for_connection(
     client: LLMClient,
-    session_id: uuid.UUID,
+    workspace_session_uuid: uuid.UUID, # This is for the directory name
     workspace_manager: WorkspaceManager,
     websocket: WebSocket,
     tool_args: Dict[str, Any],
+    user_id: str,
+    device_id: str, # This is the X-Device-ID header value
+    composite_session_id: str,
 ):
     """Create a new agent instance for a websocket connection."""
     global global_args
-    device_id = websocket.query_params.get("device_id")
+    # device_id is now passed directly
     # Setup logging
     logger_for_agent_logs = logging.getLogger(f"agent_logs_{id(websocket)}")
     logger_for_agent_logs.setLevel(logging.DEBUG)
@@ -377,14 +475,16 @@ def create_agent_for_connection(
     # Initialize database manager
     db_manager = DatabaseManager()
 
-    # Create a new session and get its workspace directory
+    # Create a new session in the database
     db_manager.create_session(
+        composite_session_id=composite_session_id,
+        workspace_session_uuid=workspace_session_uuid, # UUID for the directory
+        workspace_path=workspace_manager.root,    # Path based on workspace_session_uuid
+        user_id=user_id,
         device_id=device_id,
-        session_uuid=session_id,
-        workspace_path=workspace_manager.root,
     )
     logger_for_agent_logs.info(
-        f"Created new session {session_id} with workspace at {workspace_manager.root}"
+        f"DB Session created with composite_id {composite_session_id} for user {user_id}, device {device_id}, workspace at {workspace_manager.root}"
     )
 
     # Initialize token counter
@@ -426,11 +526,15 @@ def create_agent_for_connection(
         max_output_tokens_per_turn=MAX_OUTPUT_TOKENS_PER_TURN,
         max_turns=MAX_TURNS,
         websocket=websocket,
-        session_id=session_id,  # Pass the session_id from database manager
+        session_id=composite_session_id,  # Agent uses the composite session ID
+        user_id=user_id,
+        device_id=device_id, # Pass device_id to the agent constructor
     )
 
-    # Store the session ID in the agent for event tracking
-    agent.session_id = session_id
+    # Store the composite session ID, user ID, and device_id in the agent
+    agent.session_id = composite_session_id
+    agent.user_id = user_id
+    agent.device_id = device_id # For event saving via agent._process_messages
 
     return agent
 
@@ -587,6 +691,40 @@ async def upload_file_endpoint(request: Request):
         )
 
 
+# Function moved from utils.py and adapted
+def create_workspace_manager_for_connection(
+    base_workspace_path: str, use_container_workspace: bool = False
+) -> tuple[WorkspaceManager, uuid.UUID]: # Returns UUID for directory name
+    """Create a new workspace manager instance for a websocket connection."""
+    # Create unique UUID for the directory name for this connection
+    workspace_session_uuid = uuid.uuid4() # This UUID is for the directory name
+    workspace_path = Path(base_workspace_path).resolve()
+    connection_workspace = workspace_path / str(workspace_session_uuid)
+    connection_workspace.mkdir(parents=True, exist_ok=True)
+
+    # Initialize workspace manager with connection-specific subdirectory
+    # The WorkspaceManager's root will be the UUID-based path.
+    actual_workspace_path_for_manager = connection_workspace
+    if use_container_workspace:
+        # Simplified container path logic (adjust if complex mapping is needed)
+        parts = Path(base_workspace_path).parts
+        if "app" in parts:
+            idx = parts.index("app")
+            container_path_parts = parts[idx + 1 :]
+            actual_workspace_path_for_manager = Path("/") / Path(*container_path_parts) / str(workspace_session_uuid)
+        else:
+            # Fallback or specific logic if /app isn't in host path structure
+            actual_workspace_path_for_manager = connection_workspace
+            
+    workspace_manager = WorkspaceManager(
+        root=actual_workspace_path_for_manager,
+        # container_workspace needs to be the path *inside* the container if different
+        # For now, assuming WorkspaceManager handles this or paths are consistent
+    )
+    # Return the manager and the UUID used for the directory name
+    return workspace_manager, workspace_session_uuid
+
+
 @app.get("/api/sessions/{device_id}")
 async def get_sessions_by_device_id(device_id: str):
     """Get all sessions for a specific device ID, sorted by creation time descending.
@@ -599,105 +737,86 @@ async def get_sessions_by_device_id(device_id: str):
         A list of sessions with their details and first user message, sorted by creation time descending
     """
     try:
-        # Initialize database manager
         db_manager = DatabaseManager()
+        # This method now directly returns a list of dicts from MongoDB
+        # pymongo needs to be imported if not already at the top of the file for sort_order
+        # For now, assuming it's available or DatabaseManager handles it.
+        # Let's ensure pymongo is imported in this file if using pymongo constants.
+        import pymongo # Added import for pymongo.ASCENDING
 
-        # Get all sessions for this device, sorted by created_at descending
-        with db_manager.get_session() as session:
-            # Use raw SQL query to get sessions with their first user message
-            query = text("""
-            SELECT 
-                session.id AS session_id,
-                session.*, 
-                event.id AS first_event_id,
-                event.event_payload AS first_message,
-                event.timestamp AS first_event_time
-            FROM session
-            LEFT JOIN event ON session.id = event.session_id
-            WHERE event.id IN (
-                SELECT e.id
-                FROM event e
-                WHERE e.event_type = "user_message" 
-                AND e.timestamp = (
-                    SELECT MIN(e2.timestamp)
-                    FROM event e2
-                    WHERE e2.session_id = e.session_id
-                    AND e2.event_type = "user_message"
-                )
+        sessions_data = db_manager.get_sessions_by_device_id(device_id)
+        
+        processed_sessions = []
+        for session_doc in sessions_data:
+            first_message_text = ""
+            # Fetch the first user message for this session using the new filter
+            first_user_events = db_manager.get_events_for_session(
+                session_id=session_doc["_id"], # Use composite ID from session document
+                limit=1,
+                sort_order=pymongo.ASCENDING,
+                event_type_filter=EventType.USER_MESSAGE.value
             )
-            AND session.device_id = :device_id
-            ORDER BY session.created_at DESC
-            """)
+            
+            if first_user_events:
+                first_user_event_payload = first_user_events[0].get("event_payload")
+                if isinstance(first_user_event_payload, dict):
+                    first_message_text = first_user_event_payload.get("content", {}).get("text", "")
 
-            # Execute the raw query with parameters
-            result = session.execute(query, {"device_id": device_id})
-
-            # Convert result to a list of dictionaries
-            sessions = []
-            for row in result:
-                session_data = {
-                    "id": row.id,
-                    "workspace_dir": row.workspace_dir,
-                    "created_at": row.created_at,
-                    "device_id": row.device_id,
-                    "first_message": json.loads(row.first_message)
-                    .get("content", {})
-                    .get("text", "")
-                    if row.first_message
-                    else "",
-                }
-                sessions.append(session_data)
-
-            return {"sessions": sessions}
+            processed_sessions.append({
+                "id": session_doc["_id"],
+                "workspace_dir": session_doc["workspace_dir"],
+                "created_at": session_doc["created_at"].isoformat(),
+                "last_activated_at": session_doc.get("last_activated_at", session_doc["created_at"]).isoformat(), # Fallback to created_at if not present
+                "device_id": session_doc["device_id"],
+                "user_id": session_doc["user_id"],
+                "is_active": session_doc.get("is_active", False), # Default to False if not present
+                "workspace_session_uuid": session_doc.get("workspace_session_uuid"),
+                "first_message": first_message_text,
+            })
+        return {"sessions": processed_sessions}
 
     except Exception as e:
-        logger.error(f"Error retrieving sessions: {str(e)}")
+        logger.error(f"Error retrieving sessions for device_id {device_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(
             status_code=500, detail=f"Error retrieving sessions: {str(e)}"
         )
 
 
-@app.get("/api/sessions/{session_id}/events")
-async def get_session_events(session_id: str):
-    """Get all events for a specific session ID, sorted by timestamp ascending.
+@app.get("/api/sessions/{session_id}/events") # session_id here is the composite ID
+async def get_session_events(session_id: str): # session_id is composite
+    """Get all events for a specific composite session ID, sorted by timestamp ascending.
 
     Args:
-        session_id: The session identifier to look up events for
+        session_id: The composite session identifier (user_id_device_id)
 
     Returns:
         A list of events with their details, sorted by timestamp ascending
     """
     try:
-        # Initialize database manager
         db_manager = DatabaseManager()
-
-        # Get all events for this session, sorted by timestamp ascending
-        with db_manager.get_session() as session:
-            events = (
-                session.query(Event)
-                .filter(Event.session_id == session_id)
-                .order_by(asc(Event.timestamp))
-                .all()
-            )
-
-            # Convert events to a list of dictionaries
-            event_list = []
-            for e in events:
-                event_list.append(
-                    {
-                        "id": e.id,
-                        "session_id": e.session_id,
-                        "timestamp": e.timestamp.isoformat(),
-                        "event_type": e.event_type,
-                        "event_payload": e.event_payload,
-                        "workspace_dir": e.session.workspace_dir,
-                    }
-                )
-
-            return {"events": event_list}
+        # get_events_for_session expects the composite session_id
+        events_data = db_manager.get_events_for_session(session_id, sort_order=pymongo.ASCENDING)
+        
+        event_list = []
+        for e_doc in events_data:
+            event_list.append({
+                # "_id" from MongoDB is typically an ObjectId, convert to str if not already
+                "id": str(e_doc["_id"]), 
+                "session_id": e_doc["session_id"], # Composite session ID
+                "user_id": e_doc["user_id"],
+                "device_id": e_doc.get("device_id"),
+                "timestamp": e_doc["timestamp"].isoformat(),
+                "event_type": e_doc["event_type"],
+                "event_payload": e_doc["event_payload"],
+                # workspace_dir is not directly on event, but on session. We can fetch session if needed.
+                # For now, removing it from event list to avoid extra DB call per event.
+            })
+        return {"events": event_list}
 
     except Exception as e:
-        logger.error(f"Error retrieving events: {str(e)}")
+        logger.error(f"Error retrieving events for session {session_id}: {str(e)}")
         raise HTTPException(
             status_code=500, detail=f"Error retrieving events: {str(e)}"
         )
