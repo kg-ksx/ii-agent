@@ -1,14 +1,14 @@
-# II Agent Frontend
+# FIA Agent Frontend
 
 ## Introduction
 
-The II Agent Frontend is a modern web interface for the II Agent platform, providing an intuitive way to interact with Anthropic Claude models. It offers a responsive chat interface, file upload capabilities, browser integration, and session management through a WebSocket connection to the II Agent backend.
+The FIA Agent Frontend is a modern web interface for the FIA Agent platform, providing an intuitive way to interact with Anthropic Claude models. It offers a responsive chat interface, file upload capabilities, browser integration, and session management through a WebSocket connection to the FIA Agent backend.
 
 ## Prerequisites
 
 - Node.js 18+ (LTS recommended)
 - npm or yarn package manager
-- II Agent backend server running (WebSocket server)
+- FIA Agent backend server running (WebSocket server)
 
 ## Installation
 
@@ -114,7 +114,7 @@ frontend/
 
 ## WebSocket Integration
 
-The frontend connects to the II Agent backend via WebSocket for real-time communication. The WebSocket connection is managed in the `Home` component, handling the following:
+The frontend connects to the FIA Agent backend via WebSocket for real-time communication. The WebSocket connection is managed in the `Home` component, handling the following:
 
 1. Establishing the WebSocket connection
 2. Sending user queries and file uploads

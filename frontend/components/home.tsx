@@ -10,7 +10,6 @@ import {
   Loader2,
   Share,
 } from "lucide-react";
-import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cloneDeep, debounce } from "lodash";
@@ -866,13 +865,7 @@ export default function Home() {
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#191E1B]">
       <SidebarButton />
       {!isInChatView && (
-        <Image
-          src="/logo-only.png"
-          alt="II-Agent Logo"
-          width={80}
-          height={80}
-          className="rounded-sm"
-        />
+        <div className="text-6xl font-bold text-white mb-4">FIA</div>
       )}
       <div
         className={`flex justify-between w-full ${
@@ -888,15 +881,9 @@ export default function Home() {
           layoutId="page-title"
         >
           {isInChatView && (
-            <Image
-              src="/logo-only.png"
-              alt="II-Agent Logo"
-              width={40}
-              height={40}
-              className="rounded-sm"
-            />
+            <div className="text-2xl font-bold text-white mr-2">FIA</div>
           )}
-          {`II-Agent`}
+          {`FIA-Agent`}
         </motion.h1>
         {isInChatView ? (
           <div className="flex gap-x-2">
@@ -925,7 +912,7 @@ export default function Home() {
           <AnimatePresence mode="wait">
             {!isInChatView ? (
               <QuestionInput
-                placeholder="Give II-Agent a task to work on..."
+                placeholder="Give FIA-Agent a task to work on..."
                 value={currentQuestion}
                 setValue={setCurrentQuestion}
                 handleKeyDown={handleKeyDown}
@@ -1018,12 +1005,25 @@ export default function Home() {
                       variant="outline"
                       onClick={handleOpenVSCode}
                     >
-                      <Image
-                        src={"/vscode.png"}
-                        alt="VS Code"
-                        width={20}
-                        height={20}
-                      />{" "}
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="20"
+                        height="20"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        className="mr-2 h-5 w-5"
+                      >
+                        <path d="M10 13a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-2z" />
+                        <path d="M10 9.5V7.11c0-1.05.51-2 1.25-2.45L12 4l.75.66c.74.45 1.25 1.4 1.25 2.45V9.5" />
+                        <path d="M14 9.5h1.5c.78 0 1.42.45 1.76 1.08.33.63.33 1.37 0 2L16.5 14H14" />
+                        <path d="M10 9.5H8.5c-.78 0-1.42.45-1.76 1.08-.33.63-.33 1.37 0 2L7.5 14H10" />
+                        <path d="m14 14.5.75.66c.74.45 1.25 1.4 1.25 2.45V20l-1.25.89c-.75.54-1.75.54-2.5 0L12 20l-.75-.89c-.74-.45-1.25-1.4-1.25-2.45V17.5" />
+                        <path d="M10 14.5v-1c0-.28.22-.5.5-.5h3c.28 0 .5.22.5.5v1" />
+                      </svg>
                       Open with VS Code
                     </Button>
                   </div>
