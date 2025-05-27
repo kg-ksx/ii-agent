@@ -29,8 +29,29 @@ def start_persistent_shell(timeout: int):
     child.sendline("stty -onlcr")
     child.sendline("unset PROMPT_COMMAND")
     child.sendline(f"PS1='{custom_prompt}'")
-    # Force an initial read until the newly set prompt shows up
-    child.expect(custom_prompt)
+
+    autoenv_prompt = "Are you sure you want to allow this? (y/N) "
+    # Expect either our prompt or the autoenv prompt
+    patterns = [custom_prompt, autoenv_prompt]
+    try:
+        index = child.expect_exact(patterns, timeout=timeout) # Use expect_exact for fixed strings
+
+        if index == 1:  # autoenv_prompt was matched
+            child.sendline("y")
+            child.expect_exact(custom_prompt, timeout=timeout) # Wait for our prompt
+        # If index == 0 (custom_prompt), we are good.
+        # If expect_exact times out or hits EOF, it will raise an exception,
+        # which will be handled by the calling code or should be handled here if necessary.
+
+    except pexpect.TIMEOUT:
+        # Handle timeout, perhaps by raising it or logging
+        print("Timeout waiting for prompt in start_persistent_shell")
+        raise
+    except pexpect.EOF:
+        # Handle EOF, perhaps by raising it or logging
+        print("EOF encountered in start_persistent_shell")
+        raise
+        
     return child, custom_prompt
 
 
